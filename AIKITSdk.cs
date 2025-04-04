@@ -1,12 +1,14 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
 using chenh_XunfeiTts.Tools;
-using chenhXunfeiTts;
+using chenh_XunfeiTts;
 using static System.Net.Mime.MediaTypeNames;
+using System.IO;
 
 namespace chenh_XunfeiTts
 {
@@ -21,21 +23,34 @@ namespace chenh_XunfeiTts
         private static string _resDir;
         private static string _workDir;
         private static string _text;
-        private static string _fileName;
-        private static string _vcn="xiaoyan";
+        private static string _filePath;
+        private static string _vcn="xiaoyan"; 
+
+        public  bool ttsFinished = false;
         public AIKITSdk(AikitBuildModel model) {
 
-            _appID= model.appID;
-            _apiKey = model.apiKey;
-            _apiSecret = model.apiSecret;
-            _abilitys = model.ability;
-            _authType = model.authType;
-            _resDir = model.resDir;
-            _workDir = model.workDir;
-            _text = model.text;
-            _vcn = model.vcn;
-            _fileName = model.fileName;
-            Callbacks.FAILName = model.fileName;
+
+            try
+            {
+                _appID = model.appID;
+                _apiKey = model.apiKey;
+                _apiSecret = model.apiSecret;
+                _abilitys = model.ability;
+                _authType = model.authType;
+                _resDir = model.resDir;
+                _workDir = model.workDir;
+                _text = model.text;
+                _vcn = model.vcn;
+                _filePath = model.filePath;
+                Callbacks.FAILName = Path.GetFileNameWithoutExtension(_filePath);
+                Callbacks.FilePath = Path.GetDirectoryName(_filePath); 
+            }
+            catch (Exception ex)
+            {
+
+                Debug.WriteLine(ex.Message); ;
+            }
+
         }
 
         public  void CreatWavSource()
@@ -72,21 +87,30 @@ namespace chenh_XunfeiTts
             {
                 Console.WriteLine("AIKIT_Init failed: " + ret);
                 return;
-            } 
+            }
+            var pcmPath = Path.Combine(Callbacks.FilePath, Callbacks.FAILName)+".pcm";
+            var wavPath = _filePath;
+
             // 测试 TTS
-            WriteToSourceFile();
-            // 卸载 SDK
+            WriteToSourceFile( pcmPath);
+            //// 卸载 SDK
             XunfeiSDK.AIKIT_UnInit();
 
-            var pcmPath = Path.Combine(Directory.GetCurrentDirectory() , _fileName + ".pcm");
-            var wavPath = Path.Combine(Directory.GetCurrentDirectory() , _fileName + ".wav");  
+
             ConvertPcmToWav(pcmPath,wavPath);
 
-            Console.WriteLine("TTS finished. Press any key to exit..."); 
+
+
+
+            //if (File.Exists(pcmPath)) { 
+            //    File.Delete(pcmPath);
+            //}  
         }
 
-        public void WriteToSourceFile()
+        public void WriteToSourceFile(string pcmPath)
         {
+            Callbacks.ttsFinished = false; 
+            Callbacks.isFirstWrite = true;
             string text = _text;
             IntPtr handle = IntPtr.Zero;
 
@@ -172,9 +196,9 @@ namespace chenh_XunfeiTts
             }
 
             // 等待 TTS 完成
-            while (!Callbacks.IsTtsFinished())
+            while (!Callbacks.ttsFinished)
             {
-                System.Threading.Thread.Sleep(1000);
+                System.Threading.Thread.Sleep(50);
             }
 
             // 结束 TTS
@@ -188,41 +212,44 @@ namespace chenh_XunfeiTts
 
         public  void ConvertPcmToWav(string pcmFile, string wavFile, int sampleRate = 16000, int channels = 1, int bitsPerSample = 16)
         {
-            using (FileStream pcmStream = new FileStream(pcmFile, FileMode.Open, FileAccess.Read))
-            using (FileStream wavStream = new FileStream(wavFile, FileMode.Create, FileAccess.Write))
+            if (File.Exists(pcmFile))
             {
-                byte[] pcmData = new byte[pcmStream.Length];
-                pcmStream.Read(pcmData, 0, pcmData.Length);
-
-                // 计算 WAV 头部信息
-                int byteRate = sampleRate * channels * (bitsPerSample / 8);
-                int subChunk2Size = pcmData.Length;
-                int chunkSize = 36 + subChunk2Size;
-
-                using (BinaryWriter writer = new BinaryWriter(wavStream))
+                using (FileStream pcmStream = new FileStream(pcmFile, FileMode.Open, FileAccess.Read))
+                using (FileStream wavStream = new FileStream(wavFile, FileMode.Create, FileAccess.Write))
                 {
-                    // 写入 WAV 头部
-                    writer.Write(new char[] { 'R', 'I', 'F', 'F' }); // ChunkID
-                    writer.Write(chunkSize); // ChunkSize
-                    writer.Write(new char[] { 'W', 'A', 'V', 'E' }); // Format
+                    byte[] pcmData = new byte[pcmStream.Length];
+                    pcmStream.Read(pcmData, 0, pcmData.Length);
 
-                    // fmt 子块
-                    writer.Write(new char[] { 'f', 'm', 't', ' ' }); // Subchunk1ID
-                    writer.Write(16); // Subchunk1Size (PCM = 16)
-                    writer.Write((short)1); // AudioFormat (PCM = 1)
-                    writer.Write((short)channels); // NumChannels
-                    writer.Write(sampleRate); // SampleRate
-                    writer.Write(byteRate); // ByteRate
-                    writer.Write((short)(channels * (bitsPerSample / 8))); // BlockAlign
-                    writer.Write((short)bitsPerSample); // BitsPerSample
+                    // 计算 WAV 头部信息
+                    int byteRate = sampleRate * channels * (bitsPerSample / 8);
+                    int subChunk2Size = pcmData.Length;
+                    int chunkSize = 36 + subChunk2Size;
 
-                    // data 子块
-                    writer.Write(new char[] { 'd', 'a', 't', 'a' }); // Subchunk2ID
-                    writer.Write(subChunk2Size); // Subchunk2Size
-                    writer.Write(pcmData); // PCM 数据
-                }
+                    using (BinaryWriter writer = new BinaryWriter(wavStream))
+                    {
+                        // 写入 WAV 头部
+                        writer.Write(new char[] { 'R', 'I', 'F', 'F' }); // ChunkID
+                        writer.Write(chunkSize); // ChunkSize
+                        writer.Write(new char[] { 'W', 'A', 'V', 'E' }); // Format
+
+                        // fmt 子块
+                        writer.Write(new char[] { 'f', 'm', 't', ' ' }); // Subchunk1ID
+                        writer.Write(16); // Subchunk1Size (PCM = 16)
+                        writer.Write((short)1); // AudioFormat (PCM = 1)
+                        writer.Write((short)channels); // NumChannels
+                        writer.Write(sampleRate); // SampleRate
+                        writer.Write(byteRate); // ByteRate
+                        writer.Write((short)(channels * (bitsPerSample / 8))); // BlockAlign
+                        writer.Write((short)bitsPerSample); // BitsPerSample
+
+                        // data 子块
+                        writer.Write(new char[] { 'd', 'a', 't', 'a' }); // Subchunk2ID
+                        writer.Write(subChunk2Size); // Subchunk2Size
+                        writer.Write(pcmData); // PCM 数据
+                    }
+                } 
+                Console.WriteLine("PCM 转换为 WAV 完成: " + wavFile);
             }
-            Console.WriteLine("PCM 转换为 WAV 完成: " + wavFile);
         }
     }
 }

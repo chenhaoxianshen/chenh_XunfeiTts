@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace chenhXunfeiTts
+namespace chenh_XunfeiTts
 {
     public class AikitBuildModel
     {
@@ -17,7 +17,8 @@ namespace chenhXunfeiTts
         public  string resDir { get; set; }
         public  string workDir { get; set; }
         public  string text { get; set; }
-        public  string fileName { get; set; }
+        //public  string fileName { get; set; } 
+        public string filePath { get; set; }
         public  string vcn { get; set; } = "xiaoyan";
     }
 }
